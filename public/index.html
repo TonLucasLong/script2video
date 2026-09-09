@@ -3,119 +3,282 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>script2video</title>
+<title>script2video · script in, captioned MP4 out</title>
 <style>
+  /* The caption fonts the render uses, served from assets/fonts. The style
+     previews are drawn with the same faces as the MP4 so what you pick is
+     what you get. */
+  @font-face { font-family: 'Anton'; src: url('/fonts/Anton-Regular.ttf') format('truetype'); font-display: swap; }
+  @font-face { font-family: 'Poppins Bold'; src: url('/fonts/Poppins-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+
   :root {
-    --bg: #101114; --panel: #17191e; --line: #262a32; --ink: #e8e9ec;
-    --muted: #9aa0ab; --accent: #ffd400; --ok: #4ade80; --bad: #f87171;
+    --canvas: #000;          /* the video's black, used wherever a frame is shown */
+    --bg: #0b0b0d;
+    --panel: #131316;
+    --panel-2: #0e0e11;
+    --line: #232327;
+    --line-2: #2e2e34;
+    --ink: #f2f2f0;
+    --muted: #8d8d94;
+    --dim: #5a5a62;
+    --bar: rgba(69, 69, 69, .85); /* the Classic caption bar, same grey as the render */
+    --yellow: #ffe600;       /* the spoken word in Pop, and the one action on the page */
+    --ok: #4ade80;
+    --bad: #ff6b6b;
+    --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: Consolas, "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --display: 'Anton', Impact, "Arial Narrow Bold", sans-serif;
+    --caption: 'Poppins Bold', "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
-    margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 var(--ui); -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
   }
-  header { padding: 22px 24px 6px; }
-  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
-  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-  main { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(320px, 420px); gap: 20px; padding: 18px 24px 40px; align-items: start; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
-  label.field { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; border-radius: 4px; }
+
+  /* Header: the wordmark, one line of what it does, and the machine checks. */
+  header {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+    padding: 26px 32px 18px; border-bottom: 1px solid var(--line);
+  }
+  .wordmark {
+    margin: 0; font: 400 40px/1 var(--display); letter-spacing: .01em; text-transform: uppercase;
+    color: var(--ink);
+  }
+  .wordmark .hl { color: var(--yellow); }
+  .tagline { margin: 8px 0 0; color: var(--muted); font-size: 14px; max-width: 62ch; }
+  .checks { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding-bottom: 4px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .check i { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
+  .check.ok i { background: var(--ok); }
+  .check.bad i { background: var(--bad); }
+  .check.bad { color: var(--bad); }
+
+  .banner {
+    margin: 16px 32px 0; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5;
+    background: #2a1416; border: 1px solid #5a2529; color: #ffd3d3;
+  }
+  .banner b { display: block; margin-bottom: 4px; color: #fff; }
+  .banner code { font: 12px var(--mono); background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 3px; }
+
+  /* Three columns, left to right the way the pipeline runs: script, work, video. */
+  main {
+    display: grid; gap: 20px; padding: 22px 32px 40px; align-items: start;
+    grid-template-columns: minmax(360px, 1.05fr) minmax(340px, 1fr) minmax(320px, .95fr);
+  }
+  @media (max-width: 1240px) { main { grid-template-columns: 1fr 1fr; } .col-result { grid-column: 1 / -1; } }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; padding: 18px 16px 32px; } header { padding: 20px 16px 14px; } .banner { margin: 14px 16px 0; } .wordmark { font-size: 34px; } }
+
+  .col { display: grid; gap: 16px; align-content: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .eyebrow {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin: 0 0 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  }
+  .eyebrow a, .eyebrow button.link { font: inherit; letter-spacing: .04em; text-transform: none; color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .eyebrow a:hover, .eyebrow button.link:hover { color: var(--ink); }
+
   textarea {
-    width: 100%; min-height: 190px; resize: vertical; background: #0c0d10; color: var(--ink);
-    border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: 14px/1.6 inherit;
+    width: 100%; min-height: 176px; resize: vertical; display: block;
+    background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-2); border-radius: 8px;
+    padding: 12px 14px; font: 14.5px/1.65 var(--ui);
   }
-  .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
-  .styles input { position: absolute; opacity: 0; }
-  .card { display: block; border: 1px solid var(--line); border-radius: 8px; padding: 10px; cursor: pointer; }
-  .card:hover { border-color: #3a4150; }
-  input:checked + .card { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-  .card b { font-size: 14px; }
-  .card small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
-  .preview { height: 96px; border-radius: 6px; background: #000; position: relative; overflow: hidden; margin-bottom: 8px; }
-  .preview span { position: absolute; left: 0; right: 0; text-align: center; }
-  .prev-classic span { bottom: 10px; background: rgba(0,0,0,.55); color: #fff; font: 700 12px/1.4 inherit; padding: 4px 6px; margin: 0 10px; border-radius: 3px; }
-  .prev-pop span { top: 50%; transform: translateY(-50%); font: 800 20px/1 Impact, Haettenschweiler, sans-serif; letter-spacing: .5px; color: #fff; -webkit-text-stroke: 1.5px #000; }
-  .prev-pop em { color: var(--accent); font-style: normal; }
-  button {
-    background: var(--accent); color: #14161a; border: 0; border-radius: 8px; padding: 11px 18px;
-    font: 600 15px inherit; cursor: pointer;
+  textarea:focus-visible { outline-offset: 0; border-color: transparent; }
+  .count { margin-top: 8px; font: 12px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--bad); }
+
+  /* The style pickers. Each is a small 9:16 frame drawn with the caption fonts
+     the render uses, so the card shows the style rather than describing it. */
+  .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0 16px; }
+  .styles input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .card {
+    display: block; border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 8px 10px; cursor: pointer;
+    background: var(--panel-2); transition: border-color .15s ease;
   }
-  button[disabled] { opacity: .5; cursor: default; }
-  .row { display: flex; align-items: center; gap: 12px; }
-  .hint { color: var(--muted); font-size: 12px; }
-  pre#log {
-    margin: 0; background: #0c0d10; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
-    font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; color: #c8ccd4;
-    max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  .card:hover { border-color: #46464f; }
+  input:checked + .card { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow) inset; }
+  input:focus-visible + .card { outline: 2px solid var(--yellow); outline-offset: 2px; }
+  .stage { display: flex; justify-content: center; padding: 12px 0; margin-bottom: 10px; background: var(--canvas); border-radius: 6px; }
+  .frame {
+    position: relative; aspect-ratio: 9 / 16; width: 150px; max-width: 100%;
+    background: var(--canvas); border: 1px solid #222226; border-radius: 4px; overflow: hidden;
   }
-  pre#log .t { color: #5f6673; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
-  video { width: 100%; max-height: 62vh; background: #000; border-radius: 8px; display: block; }
-  ol.scenes { margin: 0; padding-left: 18px; }
-  ol.scenes li { margin-bottom: 10px; }
-  ol.scenes b { display: block; }
-  ol.scenes small { color: var(--muted); }
-  .meta { font-size: 12px; color: var(--muted); margin-top: 10px; }
-  .meta a { color: #8ab4ff; margin-right: 10px; }
-  .banner { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 24px 8px; }
-  .banner.bad { background: #2a1414; border: 1px solid #5b2626; color: #ffc9c9; }
-  .err { color: var(--bad); }
-  .stack { display: grid; gap: 16px; }
+  .frame .scene-tag {
+    position: absolute; top: 6%; left: 8%; right: 8%; text-align: center;
+    font: 700 7.5px/1.3 var(--caption); letter-spacing: .04em; color: #c9c9c9;
+    background: rgba(0,0,0,.6); padding: 2px 4px; border-radius: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .frame .classic {
+    position: absolute; left: 7%; right: 7%; bottom: 14%; text-align: center;
+    font: 700 11.5px/1.35 var(--caption); color: #fff; background: var(--bar); padding: 5px 7px; border-radius: 3px;
+  }
+  .frame .pop {
+    position: absolute; left: 6%; right: 6%; top: 50%; transform: translateY(-50%); text-align: center;
+    font: 400 21px/1.02 var(--display); text-transform: uppercase; color: #fff; letter-spacing: .01em;
+    text-shadow: 0 1px 0 #000, 0 2px 3px rgba(0,0,0,.6);
+  }
+  .frame .pop span { transition: color .08s linear; }
+  .frame .pop span.on { color: var(--yellow); }
+  .card b { display: block; font-size: 14px; }
+  .card small { display: block; color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 3px; }
+
+  .actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  button.go {
+    background: var(--yellow); color: #111; border: 0; border-radius: 8px; padding: 12px 20px;
+    font: 600 15px var(--ui); cursor: pointer; transition: transform .08s ease, filter .15s ease;
+  }
+  button.go:hover { filter: brightness(1.04); }
+  button.go:active { transform: translateY(1px); }
+  button.go[disabled] { opacity: .45; cursor: default; transform: none; filter: none; }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.err { color: var(--bad); }
+
+  /* The work column: a stage tracker over the log. The stages are the real
+     ones the job reports, in the order they run. */
+  .stages { display: flex; gap: 4px; margin: 0 0 12px; padding: 0; list-style: none; }
+  .stages li {
+    flex: 1; display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dim);
+    padding: 7px 0 9px; border-bottom: 2px solid var(--line); white-space: nowrap;
+  }
+  .stages li i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); flex: none; }
+  .stages li.done { color: var(--muted); border-bottom-color: #3a3a41; }
+  .stages li.done i { background: #d9d9de; }
+  .stages li.active { color: var(--ink); border-bottom-color: var(--yellow); }
+  .stages li.active i { background: var(--yellow); animation: breathe 1.6s ease-in-out infinite; }
+  .stages li.failed { color: var(--bad); border-bottom-color: var(--bad); }
+  .stages li.failed i { background: var(--bad); }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+  .log {
+    margin: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    font: 12.5px/1.6 var(--mono); color: #d3d3d8; min-height: 430px; max-height: 56vh; overflow: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .log .row { display: grid; grid-template-columns: 4.2em 1fr; gap: 0 8px; }
+  .log .t { color: var(--dim); text-align: right; }
+  .log .m { white-space: pre-wrap; word-break: break-word; }
+  .log .row.cmd .m { color: var(--dim); font-size: 11.5px; }
+  .log .row.warn .m { color: var(--muted); }
+  .log .row.bad .m { color: var(--bad); }
+  .log .empty { color: var(--dim); }
+
+  .scenes { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .scenes li { padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+  .scenes .n { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+  .scenes .v { display: block; font-size: 14px; margin: 3px 0 2px; }
+  .scenes small { display: block; color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .note { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  /* The result column. The frame is there before there is a video, so the
+     page never has a hole in it. */
+  .result-frame {
+    position: relative; aspect-ratio: 9 / 16; width: min(100%, calc(60vh * 9 / 16)); margin: 0 auto;
+    background: var(--canvas); border-radius: 8px; overflow: hidden;
+  }
+  .result-frame video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--canvas); }
+  .result-frame video[hidden] { display: none; }
+  .result-frame .placeholder {
+    position: absolute; left: 7%; right: 7%; bottom: 14%; text-align: center;
+    font: 700 13px/1.4 var(--caption); color: #bcbcbc; background: var(--bar); padding: 6px 10px; border-radius: 3px;
+  }
+  dl.meta { margin: 14px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; font-size: 12.5px; }
+  dl.meta dt { color: var(--muted); }
+  dl.meta dd { margin: 0; color: var(--ink); word-break: break-word; }
+  .files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .files a {
+    font: 12px var(--mono); color: var(--ink); text-decoration: none; padding: 5px 10px;
+    border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel-2);
+  }
+  .files a:hover { border-color: #55555f; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stages li.active i { animation: none; }
+    .frame .pop span, .card, button.go { transition: none; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>script2video</h1>
-  <p>Paste a script. Pick a caption style. Get one MP4 with a voiceover, burned-in captions, and a b-roll plan.</p>
+  <div>
+    <h1 class="wordmark">script<span class="hl">2</span>video</h1>
+    <p class="tagline">Paste a script, pick a caption style, get one MP4 back: the voiceover, the captions burned into the picture, and a plan for where the b-roll goes.</p>
+  </div>
+  <div class="checks" id="checks" aria-live="polite"></div>
 </header>
 <div id="health"></div>
 
 <main>
-  <div class="panel">
-    <label class="field" for="script">Script</label>
-    <textarea id="script" spellcheck="false"></textarea>
-
-    <div class="styles">
-      <div>
-        <input type="radio" name="style" id="s-classic" value="classic" checked>
-        <label class="card" for="s-classic">
-          <div class="preview prev-classic"><span>white text in a soft black bar</span></div>
-          <b>Classic</b>
-          <small>Bottom bar, full phrases. Reads like a documentary caption.</small>
-        </label>
-      </div>
-      <div>
-        <input type="radio" name="style" id="s-pop" value="pop">
-        <label class="card" for="s-pop">
-          <div class="preview prev-pop"><span>THREE <em>WORDS</em> BIG</span></div>
-          <b>Pop</b>
-          <small>Centre of frame, 3 to 4 words, the spoken word turns yellow.</small>
-        </label>
-      </div>
-    </div>
-
-    <div class="row">
-      <button id="go">Generate</button>
-      <span class="hint" id="hint"></span>
-    </div>
-  </div>
-
-  <div class="stack">
+  <section class="col">
     <div class="panel">
-      <h2>Under the hood</h2>
-      <pre id="log">Nothing running yet.</pre>
+      <div class="eyebrow"><label for="script">Script</label><button type="button" class="link" id="sample">Use the sample</button></div>
+      <textarea id="script" spellcheck="false" placeholder="Paste the words you want spoken. A few sentences is plenty."></textarea>
+      <div class="count" id="count"></div>
+
+      <div class="styles" role="radiogroup" aria-label="Caption style">
+        <div>
+          <input type="radio" name="style" id="s-classic" value="classic" checked>
+          <label class="card" for="s-classic">
+            <div class="stage" aria-hidden="true"><div class="frame">
+              <div class="scene-tag">SCENE 2 · B-roll</div>
+              <div class="classic">So build the boring parts first.</div>
+            </div></div>
+            <b>Classic</b>
+            <small>Whole phrases in a bar at the bottom, the way a documentary does it.</small>
+          </label>
+        </div>
+        <div>
+          <input type="radio" name="style" id="s-pop" value="pop">
+          <label class="card" for="s-pop">
+            <div class="stage" aria-hidden="true"><div class="frame">
+              <div class="scene-tag">SCENE 2 · B-roll</div>
+              <div class="pop" id="pop-preview"><span>Build</span> <span class="on">the</span> <span>boring</span> <span>parts</span></div>
+            </div></div>
+            <b>Pop</b>
+            <small>Three or four words dead centre. The word being spoken turns yellow.</small>
+          </label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="go" id="go" title="Ctrl + Enter">Generate video</button>
+        <span class="status" id="status"></span>
+      </div>
     </div>
-    <div class="panel" id="video-panel" hidden>
-      <h2>Result</h2>
-      <video id="video" controls playsinline preload="metadata"></video>
-      <div class="meta" id="meta"></div>
+  </section>
+
+  <section class="col">
+    <div class="panel">
+      <div class="eyebrow"><span>Under the hood</span></div>
+      <ol class="stages" id="stages">
+        <li data-stage="chunking"><i></i>Split</li>
+        <li data-stage="voice + scenes"><i></i>Voice + scenes</li>
+        <li data-stage="captions"><i></i>Captions</li>
+        <li data-stage="rendering"><i></i>Render</li>
+      </ol>
+      <div class="log" id="log"><span class="empty">Nothing running yet. Every step will be listed here as it happens, including the exact ffmpeg call.</span></div>
     </div>
     <div class="panel" id="scenes-panel" hidden>
-      <h2>Scene / b-roll suggestions</h2>
+      <div class="eyebrow"><span>Scene plan</span></div>
       <ol class="scenes" id="scenes"></ol>
-      <div class="meta" id="scene-source"></div>
+      <p class="note" id="scene-source"></p>
     </div>
-  </div>
+  </section>
+
+  <section class="col col-result">
+    <div class="panel">
+      <div class="eyebrow"><span>Result</span><span id="result-size"></span></div>
+      <div class="result-frame">
+        <video id="video" controls playsinline preload="metadata" hidden></video>
+        <div class="placeholder" id="placeholder">The MP4 shows up here.</div>
+      </div>
+      <dl class="meta" id="meta" hidden></dl>
+      <div class="files" id="files" hidden></div>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -123,71 +286,153 @@ const SAMPLE = `Most people think they need better ideas. They usually need a be
 I spent six years running content for other people's brands. The good weeks were never the creative weeks.
 They were the weeks where the boring parts were already handled. So build the boring parts first.
 Write once, cut it four ways, and let the schedule do the remembering.`;
+const MAX = 3000;
+const STAGE_LABEL = {
+  queued: 'Starting', chunking: 'Splitting the script', 'voice + scenes': 'Voicing it and planning scenes',
+  captions: 'Building the captions', rendering: 'Rendering with ffmpeg', done: 'Done', failed: 'Failed',
+};
+const STAGE_ORDER = ['chunking', 'voice + scenes', 'captions', 'rendering'];
 
 const $ = (id) => document.getElementById(id);
-$('script').value = SAMPLE;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+// Script box: the sample, and a live count against the limit the server enforces.
+function updateCount() {
+  const text = $('script').value.trim();
+  const words = text ? text.split(/\s+/).length : 0;
+  $('count').textContent = `${words} words · ${text.length.toLocaleString()} of ${MAX.toLocaleString()} characters`;
+  $('count').classList.toggle('over', text.length > MAX);
+}
+$('script').value = SAMPLE;
+$('script').addEventListener('input', updateCount);
+$('sample').addEventListener('click', () => { $('script').value = SAMPLE; updateCount(); $('script').focus(); });
+$('script').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') $('go').click(); });
+updateCount();
+
+// The Pop preview walks its yellow word the way the render does: nothing
+// moves, only the colour of one word changes.
+const popWords = [...$('pop-preview').querySelectorAll('span')];
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  let i = 1;
+  setInterval(() => {
+    popWords.forEach((w, k) => w.classList.toggle('on', k === i));
+    i = (i + 1) % popWords.length;
+  }, 480);
+}
+
+// Machine checks in the header, and a banner with the fix when one fails.
 fetch('/api/health').then((r) => r.json()).then((h) => {
+  $('checks').innerHTML = h.checks.map((c) =>
+    `<span class="check ${c.ok ? 'ok' : 'bad'}" title="${esc(c.detail)}"><i></i>${esc(c.name.replace(/ \(.*\)$/, ''))}</span>`).join('');
   const bad = h.checks.filter((c) => !c.ok);
   if (!bad.length) return;
-  $('health').innerHTML = '<div class="banner bad"><b>Setup problem:</b> '
-    + bad.map((c) => c.name + ' &mdash; ' + c.detail).join('<br>') + '</div>';
+  $('health').innerHTML = '<div class="banner"><b>Setup check failed. The tool will not render until this is fixed.</b>'
+    + bad.map((c) => esc(c.name) + ': ' + esc(c.detail).replace(/`([^`]+)`/g, '<code>$1</code>')).join('<br>') + '</div>';
 }).catch(() => {});
 
-let timer = null;
-
-function renderLog(log) {
-  $('log').innerHTML = log.map((l) =>
-    '<span class="t">' + String(l.at).padStart(4) + 's</span>  ' +
-    l.message.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])).join('\n');
-  $('log').scrollTop = $('log').scrollHeight;
+// Stage tracker + log.
+function setStages(stage, failed) {
+  const idx = STAGE_ORDER.indexOf(stage);
+  const past = stage === 'done' ? STAGE_ORDER.length : idx;
+  $('stages').querySelectorAll('li').forEach((li, k) => {
+    li.className = failed && k === past ? 'failed' : k < past ? 'done' : k === past && !failed ? 'active' : '';
+  });
 }
+function classify(msg) {
+  if (/^failed:/.test(msg)) return 'bad';
+  if (/^(ffmpeg|powershell|say) /.test(msg)) return 'cmd';
+  if (/^ffmpeg:/.test(msg)) return 'warn';
+  return '';
+}
+function renderLog(log) {
+  const el = $('log');
+  const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+  el.innerHTML = log.map((l) =>
+    `<div class="row ${classify(l.message)}"><span class="t">${esc(l.at)}s</span><span class="m">${esc(l.message)}</span></div>`).join('');
+  if (stick) el.scrollTop = el.scrollHeight;
+}
+
+let timer = null;
 
 function finish(job) {
   clearInterval(timer);
   $('go').disabled = false;
-  if (job.error) { $('hint').innerHTML = '<span class="err">' + job.error + '</span>'; return; }
-
+  if (job.error) {
+    setStages(job.stage === 'failed' ? lastStage : job.stage, true);
+    $('status').className = 'status err';
+    $('status').textContent = job.error;
+    return;
+  }
   const r = job.result;
-  $('hint').textContent = 'done in ' + r.elapsed + 's';
-  $('video-panel').hidden = false;
-  $('video').src = r.videoUrl + '?t=' + Date.now();
-  $('meta').innerHTML = r.styleLabel + ' captions &middot; ' + r.duration.toFixed(1) + 's &middot; '
-    + r.streams.join(' + ') + '<br>Voice: ' + r.voiceEngine + '<br>'
-    + '<a href="' + r.videoUrl + '" download>video.mp4</a>'
-    + '<a href="' + r.assUrl + '" target="_blank">captions.ass</a>'
-    + '<a href="' + r.audioUrl + '" target="_blank">voice.wav</a>'
-    + '<a href="' + r.scenesUrl + '" target="_blank">scenes.json</a>';
+  setStages('done');
+  $('status').className = 'status';
+  $('status').textContent = `Done in ${r.elapsed}s`;
+
+  const v = $('video');
+  v.hidden = false; $('placeholder').hidden = true;
+  v.src = r.videoUrl + '?t=' + Date.now();
+  // The first frame is black (the voice has a short lead-in), so park the
+  // poster just inside the first caption. Nothing spoken is skipped.
+  v.addEventListener('loadedmetadata', () => { v.currentTime = 0.3; }, { once: true });
+
+  $('meta').hidden = false;
+  $('meta').innerHTML =
+    `<dt>Style</dt><dd>${esc(r.styleLabel)}</dd>` +
+    `<dt>Length</dt><dd>${r.duration.toFixed(1)}s</dd>` +
+    `<dt>One file</dt><dd>${esc(r.streams.join(' + '))}</dd>` +
+    `<dt>Voice</dt><dd>${esc(r.voiceEngine)}</dd>` +
+    `<dt>Scenes by</dt><dd>${esc(r.sceneSource)}</dd>`;
+  $('files').hidden = false;
+  $('files').innerHTML =
+    `<a href="${r.videoUrl}" download>video.mp4</a>` +
+    `<a href="${r.assUrl}" target="_blank" rel="noopener">captions.ass</a>` +
+    `<a href="${r.audioUrl}" target="_blank" rel="noopener">voice.wav</a>` +
+    `<a href="${r.scenesUrl}" target="_blank" rel="noopener">scenes.json</a>`;
 
   $('scenes-panel').hidden = false;
   $('scenes').innerHTML = r.scenes.map((s) =>
-    '<li><b>' + s.visual + '</b><small>On screen: ' + s.onScreenText
-    + ' &middot; sentences ' + (s.startSentence + 1) + '-' + (s.endSentence + 1) + '</small></li>').join('');
-  $('scene-source').textContent = 'Source: ' + r.sceneSource + '. These also appear along the top of the video.';
+    `<li><span class="n">Scene ${s.scene}</span><span class="v">${esc(s.visual)}</span>` +
+    `<small>On screen: ${esc(s.onScreenText)}</small>` +
+    `<small>Sentences ${s.startSentence + 1} to ${s.endSentence + 1}</small></li>`).join('');
+  $('scene-source').textContent = `Planned by ${r.sceneSource}. The same labels run along the top of the video.`;
+  history.replaceState(null, '', '?job=' + encodeURIComponent(job.id)); // a refresh keeps the result
 }
 
+let lastStage = 'chunking';
 async function poll(id) {
   const job = await (await fetch('/api/jobs/' + id)).json();
   renderLog(job.log);
-  $('hint').textContent = job.stage;
+  if (job.stage !== 'failed') lastStage = job.stage;
+  if (!job.done) { setStages(job.stage); $('status').textContent = STAGE_LABEL[job.stage] ?? job.stage; }
   if (job.done) finish(job);
 }
 
 $('go').addEventListener('click', async () => {
   $('go').disabled = true;
-  $('video-panel').hidden = true;
+  $('status').className = 'status';
+  $('status').textContent = STAGE_LABEL.queued;
   $('scenes-panel').hidden = true;
-  $('hint').textContent = 'starting';
-  $('log').textContent = '';
+  $('meta').hidden = true; $('files').hidden = true;
+  $('video').hidden = true; $('video').removeAttribute('src'); $('placeholder').hidden = false;
+  $('placeholder').textContent = 'Rendering.';
+  $('log').innerHTML = '';
+  setStages('chunking');
 
   const body = { script: $('script').value, style: document.querySelector('input[name=style]:checked').value };
   const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
-  if (!res.ok) { $('go').disabled = false; $('hint').innerHTML = '<span class="err">' + data.error + '</span>'; return; }
-
+  if (!res.ok) {
+    $('go').disabled = false; setStages('');
+    $('placeholder').textContent = 'The MP4 shows up here.';
+    $('status').className = 'status err'; $('status').textContent = data.error; return;
+  }
   clearInterval(timer);
-  timer = setInterval(() => poll(data.id).catch(() => {}), 500);
+  timer = setInterval(() => poll(data.id).catch(() => {}), 400);
 });
+
+// Reopen a finished job from the address bar.
+const reopen = new URLSearchParams(location.search).get('job');
+if (reopen) { $('go').disabled = true; timer = setInterval(() => poll(reopen).catch(() => { clearInterval(timer); $('go').disabled = false; }), 400); }
 </script>
 </body>
 </html>

@@ -50,6 +50,15 @@ falls back to a heuristic and the page says so. A voice engine that errors
 falls back to the one built into the operating system. The demo cannot die
 because a network call did.
 
+**The page borrows its look from the video it makes.** Black canvas, the same
+two caption fonts, one yellow that only ever means the spoken word or the
+button. The style pickers are small 9:16 frames drawn with the real Anton and
+Poppins files served from `assets/fonts`, so a card shows the style instead of
+describing it, and the Pop card walks its yellow word the way the render does.
+The three columns run left to right in pipeline order: script, what the job is
+doing, the MP4. The stage tracker above the log uses the actual stage names the
+job reports, in the order they run, rather than a decorative 1-2-3.
+
 **Fonts are bundled, not assumed.** Two OFL fonts sit in the repo and get
 handed to ffmpeg directly. Nothing depends on what the machine has installed,
 which matters because this was built on a Mac and recorded on a PC.

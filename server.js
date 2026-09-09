@@ -1,7 +1,7 @@
 // script2video: paste a script, pick a caption style, get one MP4 back.
 import express from 'express';
 import { mkdirSync } from 'node:fs';
-import { loadEnv, config, doctor, OUTPUT_DIR, ROOT } from './lib/config.js';
+import { loadEnv, config, doctor, OUTPUT_DIR, FONTS_DIR, ROOT } from './lib/config.js';
 import { validate, createJob, runJob } from './lib/pipeline.js';
 import { STYLES } from './lib/ass.js';
 
@@ -13,6 +13,7 @@ const jobs = new Map();
 
 app.use(express.json({ limit: '256kb' }));
 app.use(express.static(`${ROOT}/public`));
+app.use('/fonts', express.static(FONTS_DIR)); // the caption fonts, so the style previews match the render
 app.use('/output', express.static(OUTPUT_DIR)); // serves byte ranges, so <video> can seek
 
 app.get('/api/health', async (_req, res) => res.json(await doctor()));
