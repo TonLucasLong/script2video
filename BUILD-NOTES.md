@@ -80,6 +80,16 @@ canvas is nothing at all. The box colour is lifted off pure black now.
 into four words then one left the last word alone on screen. The splitter now
 takes a word back off the previous cue, so four-plus-one becomes three-plus-two.
 
+**Escaping the Windows font path was not enough to make it work.** The Mac
+never exercised this: its font path has no drive letter, so there was no colon
+to escape and the code path was effectively dead. On the PC every render died
+at `Error initializing filters` with nothing pointing at the cause. Bisecting
+the filter argument by hand ruled out the space in the path, then ruled out the
+escaping, and landed on the pair: ffmpeg wants the drive colon backslashed AND
+the whole value quoted. Either one alone fails. The regression test asserts the
+built argument, not just the escaped string, because the escaped string was
+already correct while the render was broken.
+
 **The model cannot be trusted with array indices.** Scene ranges from the model
 are clamped, sorted, de-overlapped, renumbered, and stripped of characters that
 would break the subtitle format, and the same normalizer runs over the
@@ -98,8 +108,11 @@ and asks ffprobe whether the result is genuinely one file with one video
 stream, one audio stream, the right dimensions, and a duration that matches the
 voice track.
 
-Not tested: the Windows voice path (built on a Mac, verified on the PC before
-recording) and the ElevenLabs adapter (no key was used).
+Both were run on Windows before recording, which is how the font path bug
+above surfaced: 28 unit tests pass, both styles render, and the Windows
+System.Speech voice produces the audio.
+
+Not tested: the ElevenLabs adapter (no key was used).
 
 ## What I would do next
 

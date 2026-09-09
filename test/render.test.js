@@ -26,6 +26,12 @@ test('a Windows font path survives the filter parser', () => {
   const escaped = escapeFilterValue('C:\\Users\\me\\script2video\\assets\\fonts');
   assert.ok(!/[^\\]:/.test(escaped), 'every colon is escaped');
   assert.ok(!escaped.includes('\\U'), 'backslashes became forward slashes');
+
+  // The escaping on its own still fails the filtergraph on Windows. The value
+  // has to reach ffmpeg quoted as well, so lock that in.
+  const args = buildRenderArgs({ duration: 1, fontsDir: 'C:\\Users\\me\\fonts' });
+  const vf = args[args.indexOf('-vf') + 1];
+  assert.ok(vf.includes("fontsdir='C\\:/Users/me/fonts'"), `fontsdir is quoted: ${vf}`);
 });
 
 test('the form rejects what the pipeline cannot use', () => {
