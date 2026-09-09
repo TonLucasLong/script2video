@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>script2video</title>
+<style>
+  :root {
+    --bg: #101114; --panel: #17191e; --line: #262a32; --ink: #e8e9ec;
+    --muted: #9aa0ab; --accent: #ffd400; --ok: #4ade80; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  header { padding: 22px 24px 6px; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(320px, 420px); gap: 20px; padding: 18px 24px 40px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  label.field { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+  textarea {
+    width: 100%; min-height: 190px; resize: vertical; background: #0c0d10; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: 14px/1.6 inherit;
+  }
+  .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .styles input { position: absolute; opacity: 0; }
+  .card { display: block; border: 1px solid var(--line); border-radius: 8px; padding: 10px; cursor: pointer; }
+  .card:hover { border-color: #3a4150; }
+  input:checked + .card { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .card b { font-size: 14px; }
+  .card small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .preview { height: 96px; border-radius: 6px; background: #000; position: relative; overflow: hidden; margin-bottom: 8px; }
+  .preview span { position: absolute; left: 0; right: 0; text-align: center; }
+  .prev-classic span { bottom: 10px; background: rgba(0,0,0,.55); color: #fff; font: 700 12px/1.4 inherit; padding: 4px 6px; margin: 0 10px; border-radius: 3px; }
+  .prev-pop span { top: 50%; transform: translateY(-50%); font: 800 20px/1 Impact, Haettenschweiler, sans-serif; letter-spacing: .5px; color: #fff; -webkit-text-stroke: 1.5px #000; }
+  .prev-pop em { color: var(--accent); font-style: normal; }
+  button {
+    background: var(--accent); color: #14161a; border: 0; border-radius: 8px; padding: 11px 18px;
+    font: 600 15px inherit; cursor: pointer;
+  }
+  button[disabled] { opacity: .5; cursor: default; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  pre#log {
+    margin: 0; background: #0c0d10; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; color: #c8ccd4;
+    max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  pre#log .t { color: #5f6673; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  video { width: 100%; max-height: 62vh; background: #000; border-radius: 8px; display: block; }
+  ol.scenes { margin: 0; padding-left: 18px; }
+  ol.scenes li { margin-bottom: 10px; }
+  ol.scenes b { display: block; }
+  ol.scenes small { color: var(--muted); }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .meta a { color: #8ab4ff; margin-right: 10px; }
+  .banner { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 24px 8px; }
+  .banner.bad { background: #2a1414; border: 1px solid #5b2626; color: #ffc9c9; }
+  .err { color: var(--bad); }
+  .stack { display: grid; gap: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>script2video</h1>
+  <p>Paste a script. Pick a caption style. Get one MP4 with a voiceover, burned-in captions, and a b-roll plan.</p>
+</header>
+<div id="health"></div>
+
+<main>
+  <div class="panel">
+    <label class="field" for="script">Script</label>
+    <textarea id="script" spellcheck="false"></textarea>
+
+    <div class="styles">
+      <div>
+        <input type="radio" name="style" id="s-classic" value="classic" checked>
+        <label class="card" for="s-classic">
+          <div class="preview prev-classic"><span>white text in a soft black bar</span></div>
+          <b>Classic</b>
+          <small>Bottom bar, full phrases. Reads like a documentary caption.</small>
+        </label>
+      </div>
+      <div>
+        <input type="radio" name="style" id="s-pop" value="pop">
+        <label class="card" for="s-pop">
+          <div class="preview prev-pop"><span>THREE <em>WORDS</em> BIG</span></div>
+          <b>Pop</b>
+          <small>Centre of frame, 3 to 4 words, the spoken word turns yellow.</small>
+        </label>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="go">Generate</button>
+      <span class="hint" id="hint"></span>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <h2>Under the hood</h2>
+      <pre id="log">Nothing running yet.</pre>
+    </div>
+    <div class="panel" id="video-panel" hidden>
+      <h2>Result</h2>
+      <video id="video" controls playsinline preload="metadata"></video>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="panel" id="scenes-panel" hidden>
+      <h2>Scene / b-roll suggestions</h2>
+      <ol class="scenes" id="scenes"></ol>
+      <div class="meta" id="scene-source"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const SAMPLE = `Most people think they need better ideas. They usually need a better system.
+I spent six years running content for other people's brands. The good weeks were never the creative weeks.
+They were the weeks where the boring parts were already handled. So build the boring parts first.
+Write once, cut it four ways, and let the schedule do the remembering.`;
+
+const $ = (id) => document.getElementById(id);
+$('script').value = SAMPLE;
+
+fetch('/api/health').then((r) => r.json()).then((h) => {
+  const bad = h.checks.filter((c) => !c.ok);
+  if (!bad.length) return;
+  $('health').innerHTML = '<div class="banner bad"><b>Setup problem:</b> '
+    + bad.map((c) => c.name + ' &mdash; ' + c.detail).join('<br>') + '</div>';
+}).catch(() => {});
+
+let timer = null;
+
+function renderLog(log) {
+  $('log').innerHTML = log.map((l) =>
+    '<span class="t">' + String(l.at).padStart(4) + 's</span>  ' +
+    l.message.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])).join('\n');
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function finish(job) {
+  clearInterval(timer);
+  $('go').disabled = false;
+  if (job.error) { $('hint').innerHTML = '<span class="err">' + job.error + '</span>'; return; }
+
+  const r = job.result;
+  $('hint').textContent = 'done in ' + r.elapsed + 's';
+  $('video-panel').hidden = false;
+  $('video').src = r.videoUrl + '?t=' + Date.now();
+  $('meta').innerHTML = r.styleLabel + ' captions &middot; ' + r.duration.toFixed(1) + 's &middot; '
+    + r.streams.join(' + ') + '<br>Voice: ' + r.voiceEngine + '<br>'
+    + '<a href="' + r.videoUrl + '" download>video.mp4</a>'
+    + '<a href="' + r.assUrl + '" target="_blank">captions.ass</a>'
+    + '<a href="' + r.audioUrl + '" target="_blank">voice.wav</a>'
+    + '<a href="' + r.scenesUrl + '" target="_blank">scenes.json</a>';
+
+  $('scenes-panel').hidden = false;
+  $('scenes').innerHTML = r.scenes.map((s) =>
+    '<li><b>' + s.visual + '</b><small>On screen: ' + s.onScreenText
+    + ' &middot; sentences ' + (s.startSentence + 1) + '-' + (s.endSentence + 1) + '</small></li>').join('');
+  $('scene-source').textContent = 'Source: ' + r.sceneSource + '. These also appear along the top of the video.';
+}
+
+async function poll(id) {
+  const job = await (await fetch('/api/jobs/' + id)).json();
+  renderLog(job.log);
+  $('hint').textContent = job.stage;
+  if (job.done) finish(job);
+}
+
+$('go').addEventListener('click', async () => {
+  $('go').disabled = true;
+  $('video-panel').hidden = true;
+  $('scenes-panel').hidden = true;
+  $('hint').textContent = 'starting';
+  $('log').textContent = '';
+
+  const body = { script: $('script').value, style: document.querySelector('input[name=style]:checked').value };
+  const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) { $('go').disabled = false; $('hint').innerHTML = '<span class="err">' + data.error + '</span>'; return; }
+
+  clearInterval(timer);
+  timer = setInterval(() => poll(data.id).catch(() => {}), 500);
+});
+</script>
+</body>
+</html>
