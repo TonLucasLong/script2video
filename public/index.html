@@ -401,6 +401,7 @@ function finish(job) {
 let lastStage = 'chunking';
 async function poll(id) {
   const job = await (await fetch('/api/jobs/' + id)).json();
+  if (!job.log) throw new Error(job.error || 'no such job');
   renderLog(job.log);
   if (job.stage !== 'failed') lastStage = job.stage;
   if (!job.done) { setStages(job.stage); $('status').textContent = STAGE_LABEL[job.stage] ?? job.stage; }
@@ -426,13 +427,31 @@ $('go').addEventListener('click', async () => {
     $('placeholder').textContent = 'The MP4 shows up here.';
     $('status').className = 'status err'; $('status').textContent = data.error; return;
   }
-  clearInterval(timer);
-  timer = setInterval(() => poll(data.id).catch(() => {}), 400);
+  watch(data.id);
 });
+
+// Poll until the job is done. If the server stops answering, or forgets the
+// job because it was restarted, say so instead of sitting on the last line.
+function watch(id) {
+  clearInterval(timer);
+  let misses = 0;
+  timer = setInterval(async () => {
+    try { await poll(id); misses = 0; }
+    catch {
+      if (++misses < 6) return;
+      clearInterval(timer);
+      $('go').disabled = false;
+      setStages(lastStage, true);
+      $('placeholder').textContent = 'The MP4 shows up here.';
+      $('status').className = 'status err';
+      $('status').textContent = 'The server stopped answering for this job. Check that npm start is still running, then generate again.';
+    }
+  }, 400);
+}
 
 // Reopen a finished job from the address bar.
 const reopen = new URLSearchParams(location.search).get('job');
-if (reopen) { $('go').disabled = true; timer = setInterval(() => poll(reopen).catch(() => { clearInterval(timer); $('go').disabled = false; }), 400); }
+if (reopen) { $('go').disabled = true; watch(reopen); }
 </script>
 </body>
 </html>
