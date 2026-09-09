@@ -73,8 +73,16 @@ holds until the next one starts.
 **Scene labels blinked at the same seams,** for the same reason, found the same
 way, fixed the same way.
 
-**The Classic bar was invisible.** A translucent black caption box on a black
-canvas is nothing at all. The box colour is lifted off pure black now.
+**The Classic bar was invisible, twice.** A translucent black caption box on a
+black canvas is nothing at all, so the box colour got lifted off pure black.
+Except the bar still was not there, which only showed up when a frame was
+cropped and looked at on the recording machine. The real cause: with
+BorderStyle 3, libass fills the box from `OutlineColour` and uses `BackColour`
+for the drop shadow, the opposite of what the field names imply. The grey had
+been sitting in `BackColour` the whole time, so the box was drawing black on
+black while the code and the comment above it both looked correct. Worth
+recording as a lesson: the first fix was plausible, agreed with the
+documentation I half-remembered, and did nothing. Only the pixels settled it.
 
 **A stray word could flash on its own** in the Pop style: a script that split
 into four words then one left the last word alone on screen. The splitter now
